@@ -1,24 +1,35 @@
-import "dotenv/config";
-import { defineConfig, configVariable } from "hardhat/config";
-import "@nomicfoundation/hardhat-ethers"; // This injects hre.ethers
+import * as dotenv from "dotenv";
+dotenv.config(); // ✅ Load .env variables into process.env
+
+import { defineConfig } from "hardhat/config";
+import hardhatVerify from "@nomicfoundation/hardhat-verify";
+
+const PRIVATE_KEY = process.env.PRIVATE_KEY;
+if (!PRIVATE_KEY) {
+  throw new Error("PRIVATE_KEY not found in .env");
+}
 
 export default defineConfig({
   solidity: {
-    // Define a default Solidity profile (required in v3)
     profiles: {
-      default: {
-        version: "0.8.28",
-      },
+      default: { version: "0.8.28" },
     },
   },
 
   networks: {
     polygonAmoy: {
-      type: "http", // Required: specifies a connection to a remote JSON-RPC node
+      type: "http",
       url: "https://rpc-amoy.polygon.technology",
-      accounts: [configVariable("PRIVATE_KEY")],
-      // chainId is optional but can be added for clarity
+      accounts: [PRIVATE_KEY], // ✅ Use the environment variable directly
       chainId: 80002,
     },
   },
+
+  verify: {
+    etherscan: {
+      apiKey: process.env.POLYGONSCAN_API_KEY,
+    },
+  },
+
+  plugins: [hardhatVerify],
 });
