@@ -1,9 +1,10 @@
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MessageCircle, Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import RoleBadge from './RoleBadge';   // ← This line must be here
+import RoleBadge from './RoleBadge';
 
 interface TopicCardProps {
   topic: any;
@@ -12,10 +13,11 @@ interface TopicCardProps {
 }
 
 export default function TopicCard({ topic, onRefresh, onTopicClick }: TopicCardProps) {
-  const author = topic.profiles || { 
-    username: 'Anonymous', 
-    avatar_url: '', 
-    role: 'normal' 
+  const author = topic.profiles || {
+    username: 'Anonymous',
+    avatar_url: '',
+    role: 'normal',
+    id: null
   };
 
   const displayName = author.username
@@ -23,6 +25,13 @@ export default function TopicCard({ topic, onRefresh, onTopicClick }: TopicCardP
     : author.full_name
       ? author.full_name.split(' ')[0]
       : 'user';
+
+  const handleMessageClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    if (author.id) {
+      window.location.href = `/messages?user=${author.id}`;
+    }
+  };
 
   return (
     <Card
@@ -41,10 +50,15 @@ export default function TopicCard({ topic, onRefresh, onTopicClick }: TopicCardP
                 <p className="font-medium text-orange-600">{displayName}</p>
                 <RoleBadge role={author.role} />
               </div>
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Clock className="w-3 h-3" />
-                {formatDistanceToNow(new Date(topic.created_at), { addSuffix: true })}
-              </div>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleMessageClick}
+                className="text-xs h-7 px-3"
+              >
+                Message
+              </Button>
             </div>
             <h3 className="text-xl font-semibold mt-1">{topic.title}</h3>
           </div>

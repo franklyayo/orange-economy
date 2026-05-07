@@ -76,23 +76,36 @@ export default function TopicDetail({ topicId, open, onClose, onTopicDeleted }: 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <div className="flex justify-between items-start">
-            <div>
-              <DialogTitle className="text-2xl">{topic.title}</DialogTitle>
-              <p className="text-sm text-muted-foreground flex items-center gap-2">
-                {topicDisplayName} <RoleBadge role={topicAuthor.role} />
-                • {new Date(topic.created_at).toLocaleDateString()}
-              </p>
-            </div>
-            {isAdmin && (
-              <Button variant="destructive" size="sm" onClick={handleDeleteTopic}>
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            )}
-          </div>
-        </DialogHeader>
+   
+   <DialogHeader>
+  <div className="flex justify-between items-start">
+    <div>
+      <DialogTitle className="text-2xl">{topic.title}</DialogTitle>
+      <p className="text-sm text-muted-foreground flex items-center gap-2">
+        {topicDisplayName} <RoleBadge role={topicAuthor.role} />
+        • {new Date(topic.created_at).toLocaleDateString()}
+      </p>
+    </div>
 
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => {
+        if (topicAuthor.id) {
+          window.location.href = `/messages?user=${topicAuthor.id}`;
+        }
+      }}
+    >
+      Message @{topicAuthor.username}
+    </Button>
+
+    {isAdmin && (
+      <Button variant="destructive" size="sm" onClick={handleDeleteTopic}>
+        <Trash2 className="w-4 h-4" />
+      </Button>
+    )}
+  </div>
+</DialogHeader>
         <div className="flex-1 overflow-y-auto py-6 space-y-8">
           {/* Original post */}
           <div className="bg-muted/50 p-6 rounded-xl">

@@ -4,7 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { supabase, getUserRole } from './lib/supabase';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { supabase, getUserRole, searchListings } from './lib/supabase';
 import MintNFT from './components/MintNFT';
 import LoginModal from './components/LoginModal';
 import MarketplaceCard from './components/MarketplaceCard';
@@ -12,14 +19,22 @@ import Forum from './components/Forum';
 import TopicDetail from './components/TopicDetail';
 import ProfileModal from './components/ProfileModal';
 import AdminDashboard from './components/AdminDashboard';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
 import NotificationBell from './components/NotificationBell';
+import MessagesPage from './components/MessagesPage';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'marketplace' | 'forum' | 'admin'>('marketplace');
-  const [activeCategory, setActiveCategory] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'marketplace' | 'forum' | 'admin' | 'analytics' | 'messages'>('marketplace');
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+
+  // Marketplace filters
+  const [marketplaceCategory, setMarketplaceCategory] = useState('all');
+  const [minPrice, setMinPrice] = useState<number | undefined>(undefined);
+  const [maxPrice, setMaxPrice] = useState<number | undefined>(undefined);
+  const [sortBy, setSortBy] = useState<'newest' | 'price_low' | 'price_high'>('newest');
+
   const [listings, setListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null);
@@ -28,7 +43,7 @@ export default function App() {
   const [currentRole, setCurrentRole] = useState<'admin' | 'creative' | 'normal'>('normal');
   const { address } = useAccount();
 
-  // ===================== AUTH LISTENER + ROLE CHECK =====================
+  // ===================== AUTH + ROLE =====================
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -41,43 +56,34 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Check user role whenever user changes
   useEffect(() => {
     if (user) {
-      const checkRole = async () => {
-        const role = await getUserRole(user.id);
-        setCurrentRole(role);
-      };
-      checkRole();
+      getUserRole(user.id).then(role => setCurrentRole(role));
     } else {
       setCurrentRole('normal');
     }
   }, [user]);
 
   // ===================== MARKETPLACE =====================
-  const fetchListings = async () => {
-    const { data, error } = await supabase
-      .from('listings')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (error) console.error('Supabase error:', error);
+  const fetchMarketplace = async () => {
+    setLoading(true);
+    const { data, error } = await searchListings(
+      globalSearchQuery,
+      marketplaceCategory,
+      sortBy,
+      minPrice,
+      maxPrice
+    );
+    if (error) console.error('Marketplace error:', error);
     else setListings(data || []);
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchListings();
-  }, []);
+    fetchMarketplace();
+  }, [globalSearchQuery, marketplaceCategory, sortBy, minPrice, maxPrice]);
 
-  const refreshListings = () => fetchListings();
-
-  const filteredListings = listings.filter((item) => {
-    const matchesCategory = activeCategory === 'all' || item.category === activeCategory;
-    const matchesSearch =
-      item.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.creator?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+  const refreshListings = () => fetchMarketplace();
 
   return (
     <div className="min-h-screen bg-background flex flex-col font-sans">
@@ -90,13 +96,20 @@ export default function App() {
             </div>
           </div>
 
-          <div className="hidden md:flex flex-1 max-w-md mx-8 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          {/* Global Search Bar */}
+          <div className="hidden md:flex flex-1 max-w-2xl mx-8 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <Input
-              placeholder="Search music, art, scripts..."
-              className="pl-9 bg-card border-border focus-visible:ring-primary rounded-[10px]"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={
+                activeTab === 'marketplace' 
+                  ? "Search assets, creators, or description..." 
+                  : activeTab === 'forum' 
+                    ? "Search topics, content..." 
+                    : "Search..."
+              }
+              className="pl-10 bg-card border-border focus-visible:ring-primary rounded-[10px]"
+              value={globalSearchQuery}
+              onChange={(e) => setGlobalSearchQuery(e.target.value)}
             />
           </div>
 
@@ -107,10 +120,8 @@ export default function App() {
 
             <ConnectButton />
 
-            {/* Notification Bell */}
             {user && <NotificationBell userId={user.id} />}
 
-            {/* Profile Avatar */}
             {user && (
               <Button
                 variant="ghost"
@@ -134,10 +145,10 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Tabs: Marketplace / Forum / Admin (only for admins) */}
+      {/* Main Tabs */}
       <div className="bg-card border-b">
         <div className="container mx-auto px-4">
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'marketplace' | 'forum' | 'admin')}>
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
             <TabsList className="bg-transparent p-1 h-12 gap-2">
               <TabsTrigger value="marketplace" className="rounded-[10px] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
                 Marketplace
@@ -145,10 +156,20 @@ export default function App() {
               <TabsTrigger value="forum" className="rounded-[10px] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
                 Forum
               </TabsTrigger>
-              {currentRole === 'admin' && (
-                <TabsTrigger value="admin" className="rounded-[10px] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
-                  Admin
+              {user && (
+                <TabsTrigger value="messages" className="rounded-[10px] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                  Messages
                 </TabsTrigger>
+              )}
+              {currentRole === 'admin' && (
+                <>
+                  <TabsTrigger value="admin" className="rounded-[10px] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    Admin
+                  </TabsTrigger>
+                  <TabsTrigger value="analytics" className="rounded-[10px] data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+                    Analytics
+                  </TabsTrigger>
+                </>
               )}
             </TabsList>
           </Tabs>
@@ -172,48 +193,105 @@ export default function App() {
                 </div>
               </section>
 
-              {/* MARKETPLACE SECTION */}
+              {/* Advanced Filters + Listings */}
               <section className="mb-12">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 bg-card border border-border rounded-[20px] p-6">
-                  <div>
-                    <h2 className="text-2xl font-bold mb-1">Trending Assets</h2>
-                    <p className="text-muted-foreground text-sm">Live from Nigerian creators • {filteredListings.length} assets</p>
+                <div className="bg-card border border-border rounded-2xl p-6 mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="text-sm text-muted-foreground mb-1 block">Search Assets</label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                        <Input
+                          placeholder="Search by title, creator, or description..."
+                          value={globalSearchQuery}
+                          onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                          className="pl-10"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-1 block">Category</label>
+                      <Select value={marketplaceCategory} onValueChange={setMarketplaceCategory}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Categories</SelectItem>
+                          <SelectItem value="music">Music</SelectItem>
+                          <SelectItem value="art">Art</SelectItem>
+                          <SelectItem value="digital">Digital</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-1 block">Sort By</label>
+                      <Select value={sortBy} onValueChange={(v) => setSortBy(v as 'newest' | 'price_low' | 'price_high')}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="newest">Newest First</SelectItem>
+                          <SelectItem value="price_low">Price: Low to High</SelectItem>
+                          <SelectItem value="price_high">Price: High to Low</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <Tabs defaultValue="all" onValueChange={setActiveCategory}>
-                    <TabsList className="bg-transparent p-0 h-auto gap-2">
-                      {['all', 'music', 'art', 'digital'].map((cat) => (
-                        <TabsTrigger key={cat} value={cat} className="rounded-[10px]">
-                          {cat === 'all' ? 'All IPs' : cat.charAt(0).toUpperCase() + cat.slice(1)}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                  </Tabs>
+
+                  {/* Price Range */}
+                  <div className="mt-6 grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-1 block">Min Price (₦)</label>
+                      <Input 
+                        type="number" 
+                        placeholder="0" 
+                        value={minPrice || ''} 
+                        onChange={(e) => setMinPrice(e.target.value ? Number(e.target.value) : undefined)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-1 block">Max Price (₦)</label>
+                      <Input 
+                        type="number" 
+                        placeholder="1000000" 
+                        value={maxPrice || ''} 
+                        onChange={(e) => setMaxPrice(e.target.value ? Number(e.target.value) : undefined)}
+                      />
+                    </div>
+                  </div>
                 </div>
 
+                {/* Listings Grid */}
                 {loading ? (
-                  <p className="text-center py-12 text-muted-foreground">Loading live listings from blockchain...</p>
+                  <p className="text-center py-12 text-muted-foreground">Loading assets...</p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    {filteredListings.map((item) => (
-                      <MarketplaceCard key={item.id} item={item} />
-                    ))}
-                  </div>
-                )}
-
-                {filteredListings.length === 0 && (
-                  <div className="text-center py-20 bg-card border border-border rounded-[20px] mt-4">
-                    <p className="text-muted-foreground text-lg">No assets found yet.</p>
-                    <p className="text-sm text-muted-foreground mt-2">Mint your first Orange Economy NFT above!</p>
+                    {listings.length > 0 ? (
+                      listings.map((item) => (
+                        <MarketplaceCard key={item.id} item={item} />
+                      ))
+                    ) : (
+                      <div className="col-span-full text-center py-20 bg-card border border-border rounded-[20px]">
+                        <p className="text-muted-foreground text-lg">No assets found matching your criteria.</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
             </>
           ) : activeTab === 'forum' ? (
-            /* FORUM SECTION */
-            <Forum onTopicSelect={setSelectedTopicId} />
+            <Forum
+              onTopicSelect={setSelectedTopicId}
+              searchQuery={globalSearchQuery}
+            />
+          ) : activeTab === 'messages' ? (
+            <MessagesPage />
           ) : activeTab === 'admin' ? (
-            /* ADMIN DASHBOARD */
             <AdminDashboard />
+          ) : activeTab === 'analytics' ? (
+            <AnalyticsDashboard />
           ) : null}
         </div>
       </main>

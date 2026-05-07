@@ -36,15 +36,44 @@ export async function createTopic(topic: { title: string; content: string; categ
   return { data, error };
 }
 
-export async function getTopics() {
-  const { data, error } = await supabase
+// Enhanced getTopics with advanced search and filtering
+export async function getTopics(
+  searchQuery = '', 
+  categoryFilter = 'all', 
+  sortBy = 'newest',
+  roleFilter = 'all'
+) {
+  let query = supabase
     .from('forum_topics')
     .select(`
       *,
       profiles!author_id (username, avatar_url, full_name, role),
       forum_posts (id)
-    `)
-    .order('created_at', { ascending: false });
+    `);
+
+  // Text search in title and content
+  if (searchQuery.trim()) {
+    query = query.or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%`);
+  }
+
+  // Category filter
+  if (categoryFilter !== 'all') {
+    query = query.eq('category', categoryFilter);
+  }
+
+  // Role filter (search by author role)
+  if (roleFilter !== 'all') {
+    query = query.eq('profiles.role', roleFilter);
+  }
+
+  // Sorting
+  if (sortBy === 'most_replied') {
+    query = query.order('id', { ascending: false }); // fallback, since count is hard
+  } else {
+    query = query.order('created_at', { ascending: false });
+  }
+
+  const { data, error } = await query;
   return { data, error };
 }
 
@@ -237,3 +266,172 @@ export async function getAllProfiles() {
   return { data, error };
 }
 
+// ===================== ANALYTICS HELPERS =====================
+export async function getPlatformStats() {
+  // Total users
+  const { count: totalUsers } = await supabase
+    .from('profiles')
+    .select('*', { count: 'exact', head: true });
+
+  // Total topics
+  const { count: totalTopics } = await supabase
+    .from('forum_topics')
+    .select('*', { count: 'exact', head: true });
+
+  // Total replies
+  const { count: totalReplies } = await supabase
+    .from('forum_posts')
+    .select('*', { count: 'exact', head: true });
+
+  // Most active categories
+  const { data: categoryStats } = await supabase
+    .from('forum_topics')
+    .select('category')
+    .not('category', 'is', null);
+
+  // Count categories manually (simple approach)
+  const categoryCount: Record<string, number> = {};
+  categoryStats?.forEach((t: any) => {
+    const cat = t.category || 'general';
+    categoryCount[cat] = (categoryCount[cat] || 0) + 1;
+  });
+
+  return {
+    totalUsers: totalUsers || 0,
+    totalTopics: totalTopics || 0,
+    totalReplies: totalReplies || 0,
+    categoryStats: Object.entries(categoryCount)
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count)
+  };
+}
+
+export async function getRecentActivity(limit = 10) {
+  const { data, error } = await supabase
+    .from('forum_topics')
+    .select(`
+      id,
+      title,
+      created_at,
+      category,
+      profiles!author_id (username)
+    `)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  return { data, error };
+}
+
+// ===================== MARKETPLACE ADVANCED SEARCH =====================
+export async function searchListings(
+  searchQuery = '',
+  categoryFilter = 'all',
+  sortBy = 'newest',
+  minPrice?: number,
+  maxPrice?: number
+) {
+  let query = supabase
+    .from('listings')
+    .select('*');
+
+  // Text search
+  if (searchQuery.trim()) {
+    query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%,creator.ilike.%${searchQuery}%`);
+  }
+
+  // Category filter
+  if (categoryFilter !== 'all') {
+    query = query.eq('category', categoryFilter);
+  }
+
+  // Price range
+  if (minPrice !== undefined) {
+    query = query.gte('price', minPrice);
+  }
+  if (maxPrice !== undefined) {
+    query = query.lte('price', maxPrice);
+  }
+
+  // Sorting
+  if (sortBy === 'price_low') {
+    query = query.order('price', { ascending: true });
+  } else if (sortBy === 'price_high') {
+    query = query.order('price', { ascending: false });
+  } else {
+    query = query.order('created_at', { ascending: false });
+  }
+
+  const { data, error } = await query;
+  return { data, error };
+}
+
+// ===================== DIRECT MESSAGING =====================
+export async function sendMessage(receiverId: string, content: string) {
+  const { data: user } = await supabase.auth.getUser();
+  if (!user.user?.id) return { error: { message: "Not authenticated" } };
+
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({
+      sender_id: user.user.id,
+      receiver_id: receiverId,
+      content
+    })
+    .select()
+    .single();
+
+  return { data, error };
+}
+
+export async function getConversations(userId: string) {
+  const { data, error } = await supabase
+    .from('messages')
+    .select(`
+      id,
+      content,
+      created_at,
+      is_read,
+      sender_id,
+      receiver_id,
+      sender:profiles!messages_sender_id_fkey (username, avatar_url),
+      receiver:profiles!messages_receiver_id_fkey (username, avatar_url)
+    `)
+    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+    .order('created_at', { ascending: false });
+
+  if (error) console.error('getConversations error:', error);
+  return { data, error };
+}
+
+
+export async function getMessagesWithUser(otherUserId: string, limit = 50) {
+  const { data: user } = await supabase.auth.getUser();
+  if (!user.user?.id) return { data: null, error: { message: "Not authenticated" } };
+
+  const { data, error } = await supabase
+    .from('messages')
+    .select(`
+      *,
+      sender:profiles!sender_id (username, avatar_url),
+      receiver:profiles!receiver_id (username, avatar_url)
+    `)
+    .or(`and(sender_id.eq.${user.user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.user.id})`)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+
+  return { data, error };
+}
+
+export async function markMessagesAsRead(otherUserId: string) {
+  const { data: user } = await supabase.auth.getUser();
+  if (!user.user?.id) return { error: { message: "Not authenticated" } };
+
+  const { error } = await supabase
+    .from('messages')
+    .update({ is_read: true })
+    .eq('receiver_id', user.user.id)
+    .eq('sender_id', otherUserId)
+    .eq('is_read', false);
+
+  return { error };
+}
