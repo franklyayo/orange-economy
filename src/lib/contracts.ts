@@ -1,5 +1,5 @@
 export const ORANGE_NFT_ADDRESS = "0xbBd713a3EdeA46343887aC1CDCfBa2e8F74FECc8" as const;
-export const MARKETPLACE_ADDRESS = "0x890f4884633A083d1CD78228A823e704AA6f6D2f" as const;
+export const MARKETPLACE_ADDRESS = "0x1a1667664399cdA92E228f1feA074b008212B7C0" as const;
 
 export const marketplaceAbi = [
   "function listForSale(address nftContract, uint256 tokenId, uint256 price) external",

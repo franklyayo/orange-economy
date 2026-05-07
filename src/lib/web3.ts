@@ -1,11 +1,12 @@
 import { http, createConfig } from "wagmi";
-import { polygonAmoy } from "wagmi/chains";
+import { polygon } from "wagmi/chains";        
 import { injected, metaMask } from "wagmi/connectors";
 
 export const config = createConfig({
-  chains: [polygonAmoy],
+  chains: [polygon],
   transports: {
-    [polygonAmoy.id]: http("https://rpc-amoy.polygon.technology"),
+    // Uses your dedicated Alchemy node for fast, reliable reads/writes
+    [polygon.id]: http(import.meta.env.VITE_POLYGON_MAINNET_RPC), 
   },
   connectors: [injected(), metaMask()],
 });
